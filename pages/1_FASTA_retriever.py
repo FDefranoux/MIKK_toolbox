@@ -7,10 +7,13 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.Align import MultipleSeqAlignment
 
-from alignment_utils import render_alignment, view_alignment, save_bokeh_figure
+from pages.utils.alignment_utils import render_alignment, view_alignment, save_bokeh_figure
+st.set_page_config(
+    page_title="MIKK Toolbox",
+    page_icon="🐟",
+    layout="wide",
+)
 
-
-st.set_page_config(layout="wide")
 
 # ##### F2 files
 
@@ -26,7 +29,7 @@ SAMPLE_FILE = '/home/fanny/Documents/Work/Database_MIKK/igv_tests/igv_flask/igv_
 
 
 
-def samples_definition(sample_df, samples_ls=[]):
+def samples_definition(sample_df, samples_ls=[], new_name='sample'):
     """
     Description: Permits to translate name of the samples used in the VCF file
     to the one commonly used.
@@ -41,11 +44,11 @@ def samples_definition(sample_df, samples_ls=[]):
         - dictionnary of equivalent names.
     """
     if samples_ls:
-        samples = sample_df.loc[(sample_df['line'].isin(samples_ls))
+        samples = sample_df.loc[(sample_df['sample'].isin(samples_ls))
                                 | (sample_df.index.isin(samples_ls))].to_dict()
     else:
         samples = sample_df.to_dict()
-    return samples['line']
+    return samples[new_name]
 
 
 @st.cache_data()
@@ -98,7 +101,10 @@ def descriptive_info(vcf_df):
     vcf.loc[(vcf['REF'].isin(['A', 'T', 'G', 'C'])) & (vcf['ALT'].isin(['A', 'T', 'G', 'C'])), 'type'] = 'SNP'
     vcf.loc[(vcf['REF'].str.len() > 1), 'type'] = 'DEL'
     vcf.loc[(vcf['ALT'].str.len() > 1), 'type'] = 'INS'
-    vcf['id'] = vcf['Sample'].map(st.session_state['sample_dict'])
+    if len(st.session_state['sample_dict'].keys()) > 0:
+        vcf['id'] = vcf['Sample'].map(st.session_state['sample_dict'])
+    else:
+        vcf['id'] = vcf['Sample']
     vcf.drop(['Sample'], axis=1, inplace=True)
     return {'Genotypes per type of variants': vcf.groupby(['POS', 'type', 'Genotype'])['id'].nunique().astype(int).unstack().round(0), 
             'Genotypes per samples': vcf.groupby(['id', 'Genotype'])['POS'].nunique().astype(int).unstack().round(0)}
@@ -138,14 +144,16 @@ def recup_sequence(chr, start_pos, end_pos, vcf_file, fasta_dir, samples_ls=[]):
         vcf_before = get_vcf(vcf_file, chr, before_pos, start_pos)
 
     vcf_df = get_vcf(vcf_file, chr, start_pos, end_pos)    
-    # st.write(vcf_df)
+    # st.write(vcf_df.head())
+    if vcf_df.shape[0] < 0 : st.error('Region not recognized in VCF')
+    # assert vcf_df.shape[0] > 0, 'No SNPs have been recognized in the VCF for this region!'
 
     try:
         if not vcf_before.empty:
             pos_before = int(vcf_before[vcf_before['POS'].astype(int) < start_pos].iloc[-1]['POS']) -1 # Last variant before the sequence of interest 
             len(vcf_before.iloc[-1]['ALT'])
             if start_pos <= pos_before + max(len(vcf_before.iloc[-1]['REF'])+1, len(vcf_before.iloc[-1]['ALT'])+1):
-                vcf_df = pd.concat([vcf_before.iloc[-1], vcf_df]).drop_duplicates()
+                vcf_df = pd.concat([pd.DataFrame(vcf_before.iloc[-1]).T, vcf_df], ignore_index=True).drop_duplicates()
             else:
                 pos_before = start_pos
         else:
@@ -155,7 +163,6 @@ def recup_sequence(chr, start_pos, end_pos, vcf_file, fasta_dir, samples_ls=[]):
         pos_before = start_pos
 
     # Filtering for the samples
-    # st.write(samples_ls)
     if not samples_ls: 
         samples_ls = vcf_df.drop(['POS', 'REF', 'ALT'], axis=1).columns.tolist()
     if set(vcf_df.columns) & set(samples_ls) != set(samples_ls):
@@ -163,6 +170,7 @@ def recup_sequence(chr, start_pos, end_pos, vcf_file, fasta_dir, samples_ls=[]):
     samples_ls = [samp for samp in samples_ls if samp in vcf_df.columns]
     assert len(samples_ls) > 0, 'No samples has been recognized in the VCF!'
     vcf_df = vcf_df[['REF', 'ALT', 'POS'] + samples_ls]  # Filtering to asked samples
+    st.write(vcf_df.rename(columns=st.session_state['sample_dict']))
 
     # Formatting the df
     if vcf_df[vcf_df != '0, 0'].drop(['POS', 'REF', 'ALT'], axis=1).dropna(how='all').dropna(how='all', axis=1).empty:  # If no SNPs found
@@ -172,6 +180,7 @@ def recup_sequence(chr, start_pos, end_pos, vcf_file, fasta_dir, samples_ls=[]):
         return dict_seq, (start_pos, end_pos), None
 
     else:
+        # st.write(vcf_df)
         vcf_df = vcf_df[(vcf_df['POS'].astype(int) >= pos_before) & (vcf_df['POS'].astype(int) < end_pos)]
         # vcf_df[['REF', 'ALT']] = vcf_df['ID'].str.split('_', expand=True)[2].str.split('/', expand=True)[[0,1]]
         # if len(vcf_df[['REF', 'POS', 'ALT']].dropna()) != 0:
@@ -197,6 +206,8 @@ def recup_sequence(chr, start_pos, end_pos, vcf_file, fasta_dir, samples_ls=[]):
 
         # Formating the sequences
         dict_seq = {}
+        if len(st.session_state['sample_dict'].keys()) < 2:
+            st.session_state['sample_dict'].update({key:key for key in samples_ls})
         for sample in samples_ref:
             sequence1 = ref_seq[:first_variant - pos_before -1] + variant_to_seq(vcf_df['POS'], allele1[sample],
                                         alt_table)
@@ -426,61 +437,60 @@ def streamlit_params():
     """
     Description: Permits to initialize the parameters and session_state to run the streamlit app.
     """
+    if 'submit_fasta' not in st.session_state:
+        st.info('Submit the data you want to analyse on the left-side sidebar.')
+        st.session_state['submit_fasta'] = False
 
-    with st.sidebar.form('Files to work on'):
-        vcf_file = st.text_input('VCF file: ', value=VCF_FILE)
-        fasta_dir = st.text_input('Fasta directory: ', value=FASTA_DIR)
-        cram_file = st.text_input('Cram file: ', value=SAMPLE_FILE)
-        submit_files = st.form_submit_button('Submit file paths')
-    if submit_files:
-        st.session_state['submit_files'] = True
-        st.session_state['sample_file'] = cram_file
-        st.session_state['vcf_file'] = vcf_file
-        st.session_state['fasta_dir'] = fasta_dir
+    if len(set(['output_dir', 'vcf_file', 'fasta_dir', 'sample_file']) - set(st.session_state.keys())) > 0: 
+        with st.expander('Files parameters').form('General params', border=False):
+            st.header('Enter paths manually')
+            params = {}
+            for var in ['output_dir', 'vcf_file', 'fasta_dir', 'sample_file']:
+                if (var not in st.session_state) or (st.session_state[var] == ''):
+                    params[var] = st.text_input(var.replace('_', ' ').replace('dir', 'directory').title(), value='')
+            submit_params = st.form_submit_button('Submit', use_container_width=True)
+            if submit_params:
+                st.session_state.update(params)
+    if not 'sample_dict' in st.session_state:
+        st.session_state['sample_dict'] = {}
+    if 'sample_file' in st.session_state:
+        if st.session_state['sample_file'] != '':
+            with st.sidebar.expander('Filter parameters').form('Filter Form', border=False):
+                sample_df = pd.read_table(st.session_state['sample_file'], index_col='cram_file')
+                dynamic_filters = DynamicFilters(sample_df, filters=sample_df.columns.tolist())
+                dynamic_filters.display_filters(location='columns', num_columns=2)
+                submit_filter_samples = st.form_submit_button('Submit filters')
+            if submit_filter_samples:
+                st.session_state['sample_dict'] = samples_definition(dynamic_filters.filter_df())
+                st.write(st.session_state['sample_dict'])
+                st.session_state['sample_ls'] = st.session_state['sample_dict'].keys()
 
-    if not 'submit_files' in st.session_state:
-        st.session_state['submit_files'] = False
 
-    if st.session_state['submit_files']:
-        with st.sidebar.expander('Filter parameters'):
-            sample_df = pd.read_table(st.session_state['sample_file'], index_col='cram_file')
-            dynamic_filters = DynamicFilters(sample_df, filters=sample_df.columns.tolist())
-            dynamic_filters.display_filters(location='columns', num_columns=2)
-            st.session_state['sample_dict'] = samples_definition(dynamic_filters.filter_df())
-
-
-        with st.sidebar.form('Genome browser for MIKK panel'):
-            sample_dict = st.session_state['sample_dict']
-            cols = st.columns(3)
-            chr = cols[0].number_input('Chromosome', 1, 25, value=1)
-            start = cols[1].number_input('Start position', 0, step=1000)
-            end = cols[2].number_input('End position', 1000, step=1000)
-            # lines = st.multiselect('Line selection', sample_dict.keys(), format_func=lambda x: sample_dict[x])
-            # align = st.checkbox('Alignments')
-            ref_dict = sample_dict.copy()
-            ref_dict['HdR'] = 'HdR'
-            st.session_state['ref_line'] = 'HdR'
-            # st.session_state['ref_line'] = st.selectbox('Reference line selection for alignments', ['HdR'] + list(sample_dict.keys()) , format_func=lambda x: ref_dict[x], index=0)
-
-            submit = st.form_submit_button('Submit parameters')
-            if submit:
-                st.session_state['params'] = {'chr': chr, 'start_pos': start, 'end_pos':end, 
-                                            'samples_ls':list(sample_dict.keys())}
+    with st.sidebar.form('Genome browser for MIKK panel'):
+        sample_dict = st.session_state['sample_dict']
+        cols = st.columns(3)
+        chr = cols[0].number_input('Chromosome', 1, 25, value=1)
+        start = cols[1].number_input('Start position', 0, step=1000)
+        end = cols[2].number_input('End position', 1000, step=1000)
+        st.session_state['ref_line'] = 'HdR'
+        submit = st.form_submit_button('Submit parameters')
+        if submit:
+            st.session_state.update({'chr': chr, 'start_pos': start, 'end_pos':end, 
+                                        'samples_ls':list(sample_dict.keys()), 'submit_fasta':True})
 
 
 def main():
-    if 'params' not in st.session_state:
-        st.session_state['params'] = None
-
+    st.header('FASTA retriever tool')
     streamlit_params()
-    if st.session_state['params']: 
-        seqs, new_range, desc_dict = recup_sequence(vcf_file=st.session_state['vcf_file'], fasta_dir=st.session_state['fasta_dir'], **st.session_state['params'])
+    if st.session_state['submit_fasta']: 
+        st.write(st.session_state['sample_dict'])
+        seqs, new_range, desc_dict = recup_sequence(chr=st.session_state['chr'], start_pos=st.session_state['start_pos'], end_pos=st.session_state['end_pos'], samples_ls=st.session_state['samples_ls'], vcf_file=st.session_state['vcf_file'], fasta_dir=st.session_state['fasta_dir'])
         if (len(seqs.keys()) == 1) & ('HdR' in seqs.keys()):
             st.warning(f'No SNPs found in this region for those filters. Displaying the reference sequence (HdR) for the region {new_range[0]+1} and {new_range[1]+1}bp: \n')
-            st.code(seqs['HdR'])
+            # st.code(seqs['HdR'])
         else:
             tab_seq, tab_plot, tab_desc = st.tabs(["Sequences", "Alignment plot", "Descriptive table"])
-            title=f'_{st.session_state.params["chr"]}_{st.session_state.params["start_pos"]}_{st.session_state.params["end_pos"]}'
+            title=f'_{st.session_state["chr"]}_{st.session_state["start_pos"]}_{st.session_state["end_pos"]}'
 
             with tab_seq:
                 st.success(f'The sequence represents the region between the variants at {new_range[0]+1} and {new_range[1]+1}bp\n\n')
@@ -490,6 +500,7 @@ def main():
                 st.download_button('Download sequence (fasta format)', save_seqs_as_fasta(seqs), file_name=f'FastaMedakaPanel{title}_alignments.txt', use_container_width=True)
             
             with tab_plot:
+                st.success(f'The plot represents the alignments in the region between the variants at {new_range[0]+1} and {new_range[1]+1}bp\n\n')
                 alignement_res(seqs, ref=st.session_state['ref_line'], start=new_range[0], title=title)
             
             with tab_desc:

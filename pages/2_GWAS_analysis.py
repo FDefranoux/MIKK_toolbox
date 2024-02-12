@@ -5,10 +5,6 @@ import pandas as pd
 import socket
 import subprocess
 from io import BytesIO
-# import seaborn as sns
-# import matplotlib.pyplot as plt
-# from matplotlib.collections import PathCollection
-# import matplotlib.patches as mpatches
 import streamlit as st
 import plotly.express as px
 from streamlit_plotly_events import plotly_events
@@ -21,75 +17,16 @@ import pandas as pd
 import sys
 import plotly.io as pio
 from streamlit_dynamic_filters import DynamicFilters
+from streamlit_utils import confirmation_box, filter_dataframe
 pio.templates.default = "simple_white"
-st.set_page_config(layout="wide")
+st.set_page_config(
+    page_title="MIKK Toolbox",
+    page_icon="🐟",
+    layout="wide",
+)
 
 #IDEA: Save specific loci in wanted file + Load the selection you want
-
-# @st.cache_data()
-def initialization(folder, phenotype_file, covariates_file):
-
-    # Initiation of the state session
-    st.session_state['submitted'] = True
-    st.session_state['folder'] = folder
-
-    # Reading tables: 
-    gwas_file = os.path.join(folder, st.session_state['gwas_phenotype'] , f'input_{st.session_state["chr"]}_{st.session_state["gwas_phenotype"] }.gwas.tsv.gz')
-    print('\n\n', gwas_file)
-    df_gwas = pd.read_table(gwas_file)
-    df_gwas['log_p'] = -np.log10(df_gwas['lrt_p'])
-    df_gwas['selected'] = 'False'
-    st.session_state['gwas_df'] = df_gwas
-
-    pheno_df = pd.read_table(phenotype_file)
-    cov_df = pd.read_table(covariates_file)
-    df = pd.merge(pheno_df, cov_df, on='#IID')
-    df['vcf_ID'] = df['#IID'] + '_' + df['#IID']
-    st.session_state['covariates'] = cov_df.drop('#IID', axis=1).columns.tolist()
-    st.session_state['phenotypes'] = pheno_df.drop('#IID', axis=1).columns.tolist()
-    st.session_state['pheno_df'] = df
-
-    # Initialisation
-    st.session_state['pos_ls'] = dict(finemapping=[], highest=[], manual=[], loaded=[])
-    if not os.path.isdir( os.path.join(st.session_state['folder'], '.temp')):
-        os.makedirs(os.path.join(st.session_state['folder'], '.temp'))
-    st.session_state['pos_file'] = os.path.join(st.session_state['folder'], '.temp', f'list_pos_{st.session_state["chr"]}.temp')
-
-    if not os.path.exists(st.session_state['pos_file']):
-        open(st.session_state['pos_file'], 'w').close()
-        st.session_state['selected_points'] = []
-    else:
-        try:
-            st.session_state['pos_ls']['loaded'] = pd.read_table(st.session_state['pos_file'], header=None)[0].tolist()
-            st.session_state['selected_points'] = st.session_state['pos_ls']['loaded']
-            update_selection(mode='a')
-
-        except pd.errors.EmptyDataError:
-            st.session_state['selected_points'] = []
-        
-    st.session_state['selection_n'] = 0
-
-
-def selection_options():
-    # SIDEBAR options for the selected points
-    option_cols = st.columns(4)
-    if option_cols[0].button('Reset all', use_container_width=True):
-        confirmation_box(container=st)
-    if option_cols[1].button('Append selected', use_container_width=True):
-        update_selection(mode='a')
-    if option_cols[2].button('Replace selected', use_container_width=True):
-        update_selection(mode='w')
-    if option_cols[3].button('Save list of selected positions', use_container_width=True):
-        update_selection(mode='s')
-
-
-def confirmation_box(container=st):
-    confirmation_container = container.empty()
-    with confirmation_container.container(border=True):
-        container.error("Are you sure?")
-        col_conf = container.columns(2)
-        yes_btn = col_conf[0].button("Yes", on_click=update_selection, kwargs=dict(mode='rm'))
-        cancel_btn = col_conf[1].button('Cancel')
+#TODO: remove general functions eg. get_vcf 
 
 
 def update_selection(mode='a'):
@@ -107,57 +44,75 @@ def update_selection(mode='a'):
         st.session_state['selected_points'] = []
         st.session_state['pos_ls'] = dict(finemapping=[], highest=[], manual=[], loaded=[])
         st.session_state['gwas_df']['selected'] = False
-        st.session_state['action_submit'] == False
     elif mode == 's':
-        pd.Series(st.session_state['selected_points']).drop_duplicates().to_csv(st.session_state['pos_file'], 
+        pd.Series(st.session_state['selected_points']).drop_duplicates().to_csv(st.session_state['list_pos_filename'], 
             sep='\t', mode='w', index=False, header=False)
 
 
-def plot_gwas_association(df, color='selected', selection=False, key=''):
+def plot_gwas_association(df, color='selected', selection=False, key='', cont=st):
+    df = st.session_state['gwas_df'].copy()
     n=1
     color_dict={"False":'#949191', "highest":"red", "finemapping":"orange", "manual":"blue", "loaded":'purple'}
     df['selected'] = df['selected'].astype(str)
     fig = px.scatter(data_frame=df, x='pos', y='log_p', color=color, color_discrete_map=color_dict, opacity=0.5, title='GWAS ' + st.session_state['gwas_phenotype'])
-    while selection:
-        selected_points = plotly_events(fig, click_event=True, hover_event=False, select_event=True, key=key + str(n))
-        if selected_points:
-            selected_points = pd.DataFrame(selected_points)
-            st.session_state['pos_ls']['manual'] = selected_points['x'].tolist()
-            df.loc[df['pos'].isin(st.session_state['pos_ls']['manual']), 'selected'] = 'manual'
-            selected_points = None
-            n += 1                   
-            fig = px.scatter(data_frame=df, x='pos', y='log_p', color=color, color_discrete_map=color_dict, opacity=0.5, title='GWAS ' + st.session_state['gwas_phenotype'])
-    st.session_state['gwas_df'] = df
-    st.session_state['gwas_fig'] = fig
+    with cont:
+        while selection:
+            selected_points = plotly_events(fig, click_event=True, hover_event=False, select_event=True, key=key + str(n))
+            if selected_points:
+                selected_points = pd.DataFrame(selected_points)
+                st.session_state['pos_ls']['manual'] = selected_points['x'].tolist()
+                selected_points = None
+                n += 1                   
+                fig = px.scatter(data_frame=df, x='pos', y='log_p', color=color, color_discrete_map=color_dict, opacity=0.5, title='GWAS ' + st.session_state['gwas_phenotype'])
+        st.session_state['gwas_fig'] = fig
     return fig
 
 
 def tab_function():
-    tabs = st.tabs([s.center(20,"\u2001") for s in ['Finemapping', 'Highest', 'Manual selection']])
+    st.markdown('## Select the SNPs to analyze')
+    tabs = st.tabs([s.center(20,"\u2001") for s in ['Finemapping', 'Highest', 'Load list']])
     with tabs[0]:
         # Finemapping
-        finemapping = st.slider('finemapping', min_value=0, max_value=10000000, value=0, step=100000)
-        if finemapping > 0:
-            lead_snp(st.session_state['gwas_df'], finemapping=finemapping)  # Cached   
+        fmap_form = st.form('finemapping_form', border=False)
+        fmap_cols = fmap_form.columns([1,3,2])
+        fmap_cols[0].caption('Finemapping limit (bp)')
+        finemapping = fmap_cols[1].slider('finemapping', min_value=0, max_value=10000000, value=0, step=100000, label_visibility='collapsed')
+        fmap_submit = fmap_cols[2].form_submit_button('Run Finemapping', use_container_width=True)
+        if fmap_submit:
+             st.session_state['pos_ls']['finemapping'] = lead_snp(st.session_state['gwas_df'], finemapping=finemapping)  # Cached   
 
     with tabs[1]:
-        high_cols = st.columns([2,1,1,1])
-        num = high_cols[0].slider('Number of SNPs', min_value=0, max_value=10, step=1, value=0)
-        with high_cols[1]:
-            th_selection = st_btn_select(('Permutation', 'Bonferroni correction', 'Custom'))
-            if th_selection == 'Permutation':
-                thresh = 0
-            elif th_selection == 'Bonferroni correction':
-                thresh = 0.05/st.session_state['gwas_df']['pos']
-            else:
-                thresh = st.number_input('Threshold', min_value=0.0, max_value=1.0, step=0.05)
-        
-        if num > 0:
-            select_highest(st.session_state['gwas_df'], thresh, num)
+        high_form = st.form('select_high_form', border=False)
+        high_cols = high_form.columns([1,2,1,2,1])
+        high_cols[0].caption('Number of SNPs to select')
+        num = high_cols[1].slider('Number of SNPs', min_value=0, max_value=10, step=1, value=0, label_visibility='collapsed')
+        high_cols[2].caption(' Threshold')
+        thresh = high_cols[3].number_input('Threshold', min_value=0.0, max_value=1.0, step=0.05, label_visibility='collapsed')
+        high_submit = high_cols[4].form_submit_button('Select highest', use_container_width=True)
+        if high_submit:
+            st.session_state['pos_ls']['highest'] = select_highest(st.session_state['gwas_df'], thresh, num)
 
     with tabs[2]:
-        data_edit(st.session_state['gwas_df'])
+        load_form = st.form('load_form', border=False)
+        load_cols = load_form.columns([2,1])
+        load_cols[0].file_uploader("Choose a txt file", accept_multiple_files=False, key='load_file', label_visibility='collapsed')
+        load_submit = load_cols[1].form_submit_button('Load SNPs from file', use_container_width=True)
+        if (st.session_state['load_file'] is not None) & load_submit:
+            st.session_state['pos_ls']['loaded'] = pd.read_table(st.session_state['load_file'], header=None)[0].tolist()
 
+    option_cols = st.columns(4)
+    if option_cols[0].button('Reset all', use_container_width=True):
+        confirmation_box(update_selection, click_kwargs=dict(mode='rm'), container=st)
+    if option_cols[1].button('Append selected', use_container_width=True):
+        update_selection(mode='a')
+    if option_cols[2].button('Replace selected', use_container_width=True):
+        update_selection(mode='w')
+    if option_cols[3].button('Save list of selected positions', use_container_width=True):
+        with st.form('Save list', border=False):
+            save_param_cols = st.columns([3,1])
+            save_param_cols[0].text_input('Saving path', value=os.path.join(st.session_state['output_dir'], 'list_snp.txt'), label_visibility='collapsed', key='list_pos_filename')
+            save_param_cols[1].form_submit_button('Save', use_container_width=True, on_click=update_selection, kwargs=dict(mode='s'))
+    
 
 @st.cache_data()
 def lead_snp(df, finemapping=0):
@@ -174,50 +129,45 @@ def lead_snp(df, finemapping=0):
                 lead = df.loc[min_pval, 'pos']
             except:
                 break
-    # else:
-    #     df.loc[df['pos'] == df.idxmin()['lrt_p'], 'lead'] = 'True'
-    #     df['distance_lead'] = df['pos'] - df.loc[df.idxmin()['lrt_p'], 'pos']  # A SNP before the lead will be negative
-        st.session_state['pos_ls']['finemapping'] = df[df['lead'] == 'True']['pos'].tolist()
-        df.loc[df['pos'].isin(st.session_state['pos_ls']['finemapping']), 'selected'] = 'finemapping'
-        # st.session_state['gwas_df'] = df.drop('lead', axis=1)
+    return df[df['lead'] == 'True']['pos'].tolist()
+
 
 
 @st.cache_data()
 def select_highest(df, thresh, num):
     if num >0:
         highpos_ls = df[df['lrt_p'] > thresh].sort_values('lrt_p').head(num)['pos'].tolist()
-        st.session_state['pos_ls']['highest'] = highpos_ls
-        df.loc[df['pos'].isin(st.session_state['pos_ls']['highest']), 'selected'] = 'highest'
-        # st.session_state['gwas_df'] = df
+        return highpos_ls
 
 
-def data_edit(df):
-    selected_df = df[df['selected'] != 'False']
-    selected_df['Selection'] = True
-    edited_df = st.expander('Refinement of selected positions').data_editor(
-    selected_df[["chr", "pos", "lrt_p", "log_p",  "selected", "Selection"]].dropna(),
-    column_config={
-        "chr": "Chromosome",
-        "pos": "Position",
-        "ref": "Reference Allele",
-        "alt": "Alternative Allele",
-        "lrt_p": "P-value",
-        "log_p": "-log(P-value)",
-        "selected": "Method"
-    },
-    disabled=["pos", "chr", "lrt_p", "log_p", "ref", "alt"],
-    hide_index=True,
-    use_container_width=True
-)
+def data_edit(df, cont=st):
+    if df.shape[0] >10:
+        st.session_state['filtered_gwas'] = filter_dataframe(df, key='data_edit', cont=cont)
+    else:
+        df['Selection'] = True
+        st.session_state['filtered_gwas']  = st.data_editor(
+            df[["chr", "pos", "lrt_p", "log_p",  "selected", "Selection"]].dropna(),
+            column_config={
+                "chr": "Chromosome",
+                "pos": "Position",
+                "ref": "Reference Allele",
+                "alt": "Alternative Allele",
+                "lrt_p": "P-value",
+                "log_p": "-log(P-value)",
+                "selected": "Method"
+            },
+            disabled=["pos", "chr", "lrt_p", "log_p", "ref", "alt"],
+            hide_index=True,
+            use_container_width=True
+        )   
+    st.session_state['filtered_gwas'] = st.session_state['filtered_gwas'][st.session_state['filtered_gwas']['Selection'] == True]
+    st.session_state['pos_ls']['manual'] =   st.session_state['filtered_gwas']['pos'].tolist()
 
-    st.session_state['selected_points'] =  edited_df[edited_df['Selection'] == True]['pos'].tolist()
-    df.loc[(df['pos'].isin(st.session_state['pos_ls'].values()) == False), 'selected'] = 'False'
-    # st.session_state['gwas_df'] = df
 
 @st.cache_data()
 def get_vcf(vcf_file, chr, pos_ls):
     # Get VCF 
-    #TODO: Optimize the function
+    #TODO: Optimize the function or put in utils
     try:
         from pysam import VariantFile
         reader = VariantFile(vcf_file)
@@ -255,15 +205,18 @@ def collect_data():
         status.write("VCF retrieved!")
         status.update(label="VCF retrieved!", state="complete", expanded=False)
         merge = pd.merge(vcf_df, st.session_state['pheno_df'], left_on='variable', right_on='#IID')
+        merge = pd.merge(merge, st.session_state['gwas_df'][st.session_state['gwas_df']['pos'].isin(st.session_state['selected_points'])][['pos', 'ref', 'alt', 'log_p', 'lrt_p', 'lrt_df', 'lrt_chisq']], on=['pos', 'ref', 'alt'])
         merge.drop(['variable', '#IID'], axis=1, inplace=True)
         pheno_cols = st.session_state['pheno_df'].drop('#IID', axis=1).columns
         id_cols = merge.drop(st.session_state['phenotypes'] , axis=1).columns
-        merge = merge.melt(id_vars=id_cols, value_vars=pheno_cols)
+        melt = merge.melt(id_vars=id_cols, value_vars=pheno_cols)
         if merge.empty:
             status.update(label="Compilation failed", state="error", expanded=True)
         else: 
             status.update(label="Combination of data complete", state="complete", expanded=False)
-            st.session_state['vcf_df'] = merge
+            melt['strain'] = melt['strain'].astype('category')
+            st.session_state['vcf_df'] = melt
+
 
 def locus_correlation(df):
     # Transpose the DataFrame so that samples are in rows and loci in columns
@@ -274,37 +227,97 @@ def locus_correlation(df):
 
     return correlation_df
 
-def make_boxplots(params=dict(x=None, facet_col=None, facet_row=None, color=None)):
+
+def make_boxplots(vcf_df, params=dict(x=None, facet_col=None, facet_row=None, color=None)):
             x_list = params.pop('x')
-            replicates_n = st.session_state['vcf_df'].groupby(['genotype', 'variable', params['facet_col'], params['facet_row']])['id'].count().reset_index()
+            if (params['facet_row'] != None) & (params['polymorphic'] ==  True): 
+                row_gen = vcf_df[vcf_df['genotype'] != '(None, None)'].groupby([params['facet_row']])['genotype'].nunique().reset_index()
+                row_pol = row_gen[row_gen['genotype'] >= 3][params['facet_row']]
+                vcf_df = vcf_df[vcf_df[params['facet_row']].isin(row_pol)]
+            params.pop('polymorphic')
+            replicates_n = vcf_df.groupby(['genotype', 'variable', params['facet_col'], params['facet_row']])['id'].count().reset_index()
             replicates_n.rename(columns=dict(id='n'), inplace=True)
             # st.write(replicates_n)
-            df = pd.merge(replicates_n, st.session_state['vcf_df'], on=['genotype', 'variable', params['facet_col'], params['facet_row']])
+            df = pd.merge(replicates_n, vcf_df, on=['genotype', 'variable', params['facet_col'], params['facet_row']])
             # st.write(df, df.shape, st.session_state['vcf_df'].shape)
             df.sort_values(['pos', 'genotype', 'strain'], inplace=True)
             fig1 = px.box(df[df['variable'].isin(x_list)], x='variable', y='value', hover_data=df.drop('vcf_ID', axis=1).columns,facet_row_spacing=0.01, **params)
             if params['facet_row'] != None:
                 n_row = df.loc[df['variable'].isin(x_list), params['facet_row']].nunique()
-                fig1.update_layout(height=200 * int(n_row))
+                fig1.update_layout(height=200 * max(1, int(n_row)))
             st.plotly_chart(fig1, use_container_width=True)
             st.session_state['box_fig'] = fig1
             return fig1
 
 
-
 def save_page(name_file='page_gwasbox_graph.html'):
-    list_folders = name_file.split('/')
-    # for n in range(len(list_folders)):
-    if not os.path.exists(os.path.dirname(name_file)):
-        os.makedirs(os.path.dirname(name_file))
+    with st.form('Html page saving', border=True):
+        save_cols = st.columns([2,1,1])
+        default_name = os.path.join(st.session_state['flexlmm_dir'], 'output', f"page_gwasbox_graph_{st.session_state['chr']}.html")
+        name_file = save_cols[0].text_input('Enter file path to save', value=default_name, label_visibility='collapsed')
+        saving = save_cols[1].form_submit_button('**Save HTML page**', use_container_width=True)
+    if saving :
+        if not os.path.exists(os.path.dirname(name_file)):
+            os.mkdir(os.path.dirname(name_file))
 
-    try:
-        fig = plot_gwas_association(st.session_state['gwas_df'], color='selected', selection=False)       
-        with open(name_file, 'w') as f:
-            f.write(st.session_state['box_fig'].to_html(full_html=False, include_plotlyjs='cdn'))
-            f.write(fig.to_html(full_html=False, include_plotlyjs=False))
-    except Exception as err:
-        print('could not save\n' + str(err))
+        fig = plot_gwas_association(st.session_state['gwas_df'], color='selected', key='saving', cont=st.container())
+               
+        try:
+            with open(name_file, 'w') as f:
+                from markdown import markdown
+                f.write(markdown(''' <style>
+                                    body {background-color: white;}
+                                    h1   {color: #1c205a; font-family: Arial, Helvetica, sans-serif;}
+                                    h2   {color: #414452; font-family: Arial, Helvetica, sans-serif;}
+                                    h3   {color: #414452; font-family: Arial, Helvetica, sans-serif;}
+                                    p    {color: black; font-family: Arial, Helvetica, sans-serif;}
+                                    </style>
+                                 ''')) 
+                styles = [
+                dict(selector="tr:hover",
+                            props=[("background", "#f4f4f4")]),
+                dict(selector="th", props=[("color", "#fff"),
+                                        ("border", "1px solid #eee"),
+                                        ("padding", "12px 30px"),
+                                        ("border-collapse", "collapse"),
+                                        ("background", "#343838"),
+                                        ("text-transform", "uppercase"),
+                                        ("font-size", "14px"),
+                                        ("font-family" , 'Arial'),
+                                        ]),
+                dict(selector="td", props=[("color", "#999"),
+                                        ("border", "1px solid #eee"),
+                                        ("padding", "12px 30px"),
+                                        ("border-collapse", "collapse"),
+                                        ("font-size", "12px"),
+                                        ("font-family" , 'Arial'),
+                                        ]),
+                dict(selector="table", props=[
+                                                ("font-family" , 'Arial'),
+                                                ("margin" , "25px auto"),
+                                                ("border-collapse" , "collapse"),
+                                                ("border" , "1px solid #eee"),
+                                                ("border-bottom" , "2px solid #343838"),                                    
+                                                ]),
+                dict(selector="caption", props=[("caption-side", "bottom")])]
+                f.write(markdown('# Report analysis'))
+                f.write(markdown('### GWAS'))
+
+                gwas_out = st.session_state['gwas_df'][st.session_state['gwas_df']['pos'].isin(st.session_state['selected_points'])].drop('beta', axis=1)
+                f.write(gwas_out.reset_index(drop=True).style.set_table_styles(styles).background_gradient().to_html(index=False, justify='center', border=1))
+                f.write(fig.to_html(full_html=False, include_plotlyjs='cdn'))
+                if 'box_fig' in st.session_state:
+                    f.write(markdown('### Association Boxplots'))
+                    f.write(st.session_state['box_fig'].to_html(full_html=False, include_plotlyjs='cdn'))
+                if 'LD_fig' in st.session_state:
+                    f.write(markdown('### Linkage desiquilibrium'))
+                    f.write(st.session_state['LD_fig'].to_html(full_html=False, include_plotlyjs='cdn'))
+            if (os.path.exists(name_file) == True):
+                st.success(f'The file {name_file} has been saved successfully!')
+            elif (os.path.exists(name_file) == False):
+                st.error(f'There has been an issue while saving file {name_file}')
+        except Exception as err:
+            st.error('could not save' + str(err))
 
 
 # def save_png(name_file='page_gwasbox_graph.html'):
@@ -325,118 +338,151 @@ def save_page(name_file='page_gwasbox_graph.html'):
 #     # except:
 #     #     pass
 
+# @st.cache_data()
+def initialization():
 
-def main(folder):
+    # Initiation of the state session
+    st.session_state['submit_gwas'] = True
+
+    # Reading tables: 
+    gwas_file = os.path.join(st.session_state['flexlmm_dir'], 'gwas', st.session_state['gwas_phenotype'] , f'input_{st.session_state["chr"]}_{st.session_state["gwas_phenotype"] }.gwas.tsv.gz')
+    # st.write(gwas_file)
+    df_gwas = pd.read_table(gwas_file)
+    df_gwas['log_p'] = -np.log10(df_gwas['lrt_p'])
+    df_gwas['selected'] = 'False'
+    st.session_state['gwas_df'] = df_gwas
+
+    pheno_df = pd.read_table(st.session_state['phenotype_file'])
+    st.session_state['phenotypes'] = pheno_df.drop('#IID', axis=1).columns.tolist()
+    cov_df = pd.read_table(st.session_state['covariate_file'])
+    df = pd.merge(pheno_df, cov_df, on='#IID')
+    st.session_state['covariates'] = cov_df.drop('#IID', axis=1).columns.tolist()
+    df['vcf_ID'] = df['#IID'] + '_' + df['#IID']
+    st.session_state['pheno_df'] = df
+
+    # Initialisation
+    st.session_state['pos_ls'] = dict(finemapping=[], highest=[], manual=[], loaded=[])  
+    st.session_state['selected_points']  = []    
+    st.session_state['selection_n'] = 0
+
+
+def main():
     st.title('GWAS association study')
+    if 'submit_gwas' not in st.session_state:
+        st.info('Submit the data you want to analyse on the left-side sidebar.')
+        st.session_state['submit_gwas'] = False
+
+    if len(set(['vcf_file', 'flexlmm_dir', 'phenotype_file', 'covariate_file', 'output_dir']) - set(st.session_state.keys())) > 0: 
+        with st.expander('Files parameters').form('General params', border=False):
+            st.header('Enter paths manually')
+            params = {}
+            for var in ['output_dir', 'vcf_file', 'flexlmm_dir', 'phenotype_file','covariate_file']:
+                if (var not in st.session_state) or (st.session_state[var] == ''):
+                    params[var] = st.text_input(var.replace('_', ' ').replace('dir', 'directory').title(), value='')
+            submit_params = st.form_submit_button('Submit', use_container_width=True)     
+            if submit_params:
+                st.session_state.update(params)
 
     if 'pos_ls' not in st.session_state:
         st.session_state['pos_ls'] = dict(finemapping=[], highest=[], manual=[], loaded=[])
-    if 'submitted' not in st.session_state:
-        st.info('Submit the data you want to analyse on the left-side sidebar.')
-        st.session_state['submitted'] = False
+   
+    if 'flexlmm_dir' in st.session_state:
+        with st.sidebar.form("params_selection", border=False):
+            st.markdown('## Selection of the parameters: ')
+            st.session_state['chr'] = st.slider(label='Chromosome', min_value=1, max_value=24, step=1)
+            phenotype_ls = {f.split('/')[-2] for f in glob.glob(os.path.join(st.session_state['flexlmm_dir'], 'gwas/*/*.gwas*'))}
+            st.session_state['gwas_phenotype']  = st.selectbox('GWAS', sorted(phenotype_ls), index=len(phenotype_ls)-1)
+            submitted = st.form_submit_button("Submit", use_container_width=True)
+            if submitted:
+                with st.spinner('Initialization...'):
+                    initialization()
 
-    # INITIAL SIDEBAR FORM
-    with st.sidebar.form("file_selection", border = False):
-        st.markdown('## Selection of the files: ')
-        st.session_state['chr'] = st.slider(label='Chromosome', min_value=1, max_value=24, step=1)
-        phenotype_ls = {f.split('/')[-2] for f in glob.glob(os.path.join(folder, '*/*.gwas*'))}
-        st.session_state['gwas_phenotype']  = st.selectbox('GWAS', sorted(phenotype_ls), index=len(phenotype_ls)-1)
-        st.session_state['vcf_file'] = st.selectbox('VCF', glob.glob(os.path.join(folder, '*vcf.gz*')), format_func=lambda x: x.split('/')[-1])
-        select_pheno = st.selectbox('Phenotypes measures', glob.glob(os.path.join(folder, '*phenotype*')), format_func=lambda x: x.split('/')[-1])
-        select_cov = st.selectbox('Covariates', glob.glob(os.path.join(folder, '*covariates*')), format_func=lambda x: x.split('/')[-1])
-        
-        submitted = st.form_submit_button("Submit", use_container_width=True)
-        if submitted:
-            with st.spinner('Initialization...'):
-                initialization(folder, select_pheno, select_cov)
-                # initialization(folder, select_chr, select_gwas, select_vcf, select_pheno, select_cov)
+        # with st.sidebar.form("saving_params", border=True):
+        #     col_sav = st.columns([2,1])
+        #     new_path = col_sav[0].text_input('Path for list of position to be saved', value=os.path.join(os.getcwd(), f'list_pos.temp'), label_visibility='collapsed')
+        #     change_save_path = col_sav[1].form_submit_button("Change path", use_container_width=True)
+        #     if change_save_path:
+        #         st.session_state['list_pos_filename'] = new_path
+
     
-    if st.session_state['submitted'] :
+    if st.session_state['submit_gwas'] :
+        try:
+            st.image(os.path.join(st.session_state['flexlmm_dir'], 'plots', 'manhattan', st.session_state['gwas_phenotype'] + '.png' ), use_column_width=True)
+        except:
+            st.warning('Could not find full GWAS plot')
+        
+        st.sidebar.write('Positions', st.session_state['pos_ls'])
+        st.sidebar.write('Selected points', st.session_state['selected_points'])
+        
         tab_function()
-        selection_options()  # SNPs SELECTION TABs
-        st.session_state['gwas_df']['type'] =  st.session_state['gwas_df']['selected'].apply(lambda x:str(type(x)))
-        with st.empty():
-            try:
-                st.session_state['gwas_fig'] = plot_gwas_association(st.session_state['gwas_df'], selection=True, key='selection' + str(st.session_state['selection_n']))
-            except:
-                pass
+        placeholder_gwas = st.empty()
+        try:
+            st.session_state['gwas_fig'] = plot_gwas_association(st.session_state['gwas_df'], selection=True, key='selection' + str(st.session_state['selection_n']), cont=placeholder_gwas)
+        except:
+            pass
         
-        with st.form('action_form', border=False):
-            action_list = ['Boxpot Genotype x Phenotype', 'Linkage desiquilibrium', 'Region']
-            action_cols = st.columns([5,1])
-            st.session_state['select_action'] = action_cols[0].selectbox('Select what you want to do :', action_list, label_visibility='collapsed')
-            action_submit = action_cols[1].form_submit_button('Go')
-            if action_submit:
-                st.session_state['action_submit'] = True 
-        
-        # Action
-        if not 'action_submit' in  st.session_state:
-            st.session_state['action_submit']= False
-        if not 'select_action' in  st.session_state:
-            st.session_state['select_action']= None
-        if not 'plot_submit' in st.session_state:
-            st.session_state['plot_submit'] = False
+        if 'vcf_df' not in st.session_state:
+            st.session_state['vcf_df'] = pd.DataFrame()
+        st.button('Download genotype data', type="primary", on_click=collect_data, use_container_width=True)
 
-        if st.session_state['action_submit'] == True:
-            if st.session_state['select_action'] == action_list[0]:
-                with st.form('Parameters for the boxplots: '):
-                    st.header('Boxplot parameters: ')
+        if 'filtered_vcf' not in st.session_state:
+            st.session_state['filtered_vcf'] = pd.DataFrame()
+
+        if not st.session_state['vcf_df'].empty:
+            st.session_state['boxplot_submit'] = False
+            plot_tabs = st.tabs(['Boxpot Genotype x Phenotype', 'Linkage desiquilibrium'])
+            with plot_tabs[0]:
+                cont_box = st.container(border=True)
+                cont_box.header('Boxplot parameters: ')
+                filter_exp = cont_box.expander('Further Filtering')
+                filter_dataframe(st.session_state['vcf_df'], key='boxplot_df', cont=filter_exp, session_state_var='filtered_vcf')
+                with cont_box.form('Parameters for the boxplots: ', border=False):
                     params_col = st.columns(2)
-                    x = st.multiselect('X-axis', st.session_state['phenotypes'], default=[col for col in st.session_state['phenotypes'] if 'loop' in col])
-
+                    x = st.multiselect('X-axis', st.session_state['phenotypes'], default=st.session_state['gwas_phenotype'])
                     # hue = params_col[0].selectbox('Color parameter', st.session_state['pheno_df'].columns.tolist()  + [None])# index=st.session_state['pheno_df'].columns.tolist().index('genotype'))
-                    facet_row = params_col[0].selectbox('Split row parameter',  st.session_state['covariates'] + [None])
-                    facet_col = params_col[1].selectbox('Split column parameter', ['pos'] + [None])
+                    facet_col = params_col[0].selectbox('Split column parameter', ['pos'] + [None])
+                    facet_row = params_col[1].selectbox('Split row parameter',  st.session_state['covariates'] + [None])
                     dict_params = dict(x=x, facet_col=facet_col, facet_row=facet_row, color='genotype')
-                    if st.checkbox('Display all points'): dict_params.update(dict(points='all'))
-                    exp = st.expander('Filtering parameters')
-                    # with exp:
-                    #     cross_filter = st.multiselect('Cross selection: ', st.session_state['pheno_df']['strain'].unique(), st.session_state['pheno_df']['strain'].unique())
-                    plot_submit = st.form_submit_button("Plot")
-                    if plot_submit:
-                        st.session_state['plot_submit'] =  True
-                    #     pos_filter = st.multiselect('Position selection: ', st.session_state['selected_points'], st.session_state['selected_points'])
+                    if params_col[1].checkbox('Display all points'): dict_params.update(dict(points='all'))
+                    if params_col[0].checkbox('Display only polymorphic rows (work with facet_row)'): 
+                        dict_params.update(dict(polymorphic=True))
+                    else: 
+                        dict_params.update(dict(polymorphic=False))
+                    boxplot_submit = st.form_submit_button("Plot")
+                    if boxplot_submit:
+                        st.session_state['boxplot_submit'] =  True
 
+                if st.session_state['boxplot_submit'] == True:
+                    if not st.session_state['filtered_vcf'].empty:
+                        st.session_state['box_fig'] = make_boxplots(vcf_df=st.session_state['filtered_vcf'], params=dict_params)
+                    else:
+                        st.session_state['box_fig'] = make_boxplots(vcf_df=st.session_state['vcf_df'], params=dict_params)
 
-                if st.session_state['plot_submit'] == True:
-                    collect_data()
-                    st.session_state['box_fig'] = make_boxplots(params=dict_params)
-                    with st.container(border=True):
-                        save_cols = st.columns([2,1,1])
-                        default_name = os.path.join(st.session_state['folder'], 'output', f"page_gwasbox_graph_{st.session_state['chr']}.html")
-                        name_file = save_cols[0].text_input('Enter file path to save', value=default_name, label_visibility='collapsed')
-                        saving = save_cols[1].button('**Save HTML page**', use_container_width=True, on_click=save_page, kwargs=dict(name_file=name_file))
-                        # saving_png = save_cols[2].button('**Save PNG plots**', use_container_width=True, on_click=save_png, kwargs=dict(name_file=name_file))
-                        if saving and os.path.exists(name_file):
-                            st.success(f'The file {name_file} has been saved successfully!')
-                        elif saving and (os.path.exists(name_file) ==False):
-                            st.error(f'There has been an issue while saving file {name_file}')
             
-            elif st.session_state['select_action'] == action_list[1]:
-                vcf_df = get_vcf(st.session_state['vcf_file'], st.session_state['chr'], st.session_state['selected_points'])
-                vcf_df = vcf_df[vcf_df['genotype'] != '(None, None)']
-                st.write(vcf_df['genotype'].unique())
+            with plot_tabs[1]:
+                vcf_df = st.session_state['vcf_df'][st.session_state['vcf_df']['genotype'] != '(None, None)'].copy()
+                vcf_df = vcf_df[vcf_df['variable'] == st.session_state['gwas_phenotype']]
                 vcf_df['gen_dum'] = vcf_df['genotype'].str[1].astype(int) + vcf_df['genotype'].str[4].astype(int)
-                new_df = vcf_df.groupby(['pos', 'variable'])['gen_dum'].first().unstack()
+                st.write(vcf_df)
+                new_df = vcf_df.groupby(['pos', 'id'])['gen_dum'].first().unstack()
+                st.write(new_df.T)
                 corr = locus_correlation(new_df)
-                st.write(corr.head())
-                st.write(new_df.head())
-                # st.write(corr.min().min(), corr.max().max())
+                st.write(corr)
                 labels = [str(c) for c in corr.columns]
                 corr.columns = labels
                 corr.index = [str(c) for c in corr.index]
                 corr_fig = px.imshow(corr, zmin=0, zmax=1, x=corr.columns, y=corr.columns)
+                st.session_state['LD_fig']  = corr_fig
                 st.plotly_chart(corr_fig, use_container_width=True)
             
-   
+            save_page()
+
+            
      
 if __name__ == '__main__':
-    assert os.path.isdir(sys.argv[1]), 'Folder cannot be found'
-    main(sys.argv[1])
+    main()
 
 
 # TODO: IGV embedding ?
-# TODO: calculation of distance from lead SNP AND linkqge desiquilirium
-# TODO: info about - gene -LOF - ...
 # TODO: Option to save in PNG not HTML
 # TODO: Include fitering ?
