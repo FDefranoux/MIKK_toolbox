@@ -16,28 +16,14 @@ pip install -r requirement.txt
 
 `streamlit run MIKK_toolbox.py`
 
+`streamlit run MIKK_toolbox.py -- -y path/to/yaml/params.yml`
+
 ## Parameters 
 
 ### General parameters
 
-- [ ] Set up the initial session state.
+-y : YAML parameters path. Not mandatory can be added through the app.
 
-#### Setting a working folder
-- [ ] Using the `-f` option you can set up the folder containing the files you would like to work with. 
-
-`streamlit run MIKK_toolbox.py -f finemapping`
-
-- [ ] YAML to overwrite some of the file paths ?
-
-#### YAML file 
-- [ ] Using the `-y` option you can set up the parameters individually for the files.
-
-Example of YAML file to setup the parameters of analysis 
->
-
-#### Form ?
-
-- [ ] ask to enter the file path manually ?
 
 ### Function description and their parameters 
 
@@ -79,8 +65,6 @@ Example of YAML file to setup the parameters of analysis
 
 
 #### TODOs
-- [x] Implement general parameters (YAML and FOLDER + interactive and save to YAML)
-- [x] Add ask for input if nothing exists 
-- [ ] Check VEP idea
 - [ ] Think how to link the different pages and their output together (selection of SNP → VEP analysis or send to FASTA etc)
+
 
