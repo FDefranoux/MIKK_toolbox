@@ -12,6 +12,7 @@ st.set_page_config(
 
 def main(yaml_file=''):
 
+    st.header('Welcome to the MIKK panel Toolbox')
 
     # Setting sesssion state
     if yaml_file:
@@ -21,7 +22,8 @@ def main(yaml_file=''):
         # st.write(st.session_state)
         st.success('YAML info loaded successfully')
     else:
-        st.page_link("pages/4_Modify_parameters.py", label="Uplad your parameters here")
+        with st.container(border=True):
+            st.page_link("pages/4_Modify_parameters.py", label="**Upload your parameters here**", icon="➡️", use_container_width=True)
         
     if ('output_dir' in st.session_state):
         if os.path.isdir(st.session_state['output_dir']) == False:
