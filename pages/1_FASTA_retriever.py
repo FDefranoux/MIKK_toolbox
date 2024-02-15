@@ -43,6 +43,8 @@ def samples_definition(sample_df, samples_ls=[], new_name='sample'):
     Returns:
         - dictionnary of equivalent names.
     """
+    sample_df = sample_df.set_index('cram_file').copy()
+    st.write(sample_df.head())
     if samples_ls:
         samples = sample_df.loc[(sample_df['sample'].isin(samples_ls))
                                 | (sample_df.index.isin(samples_ls))].to_dict()
@@ -456,7 +458,7 @@ def streamlit_params():
     if 'sample_file' in st.session_state:
         if st.session_state['sample_file'] != '':
             with st.sidebar.expander('Filter parameters').form('Filter Form', border=False):
-                sample_df = pd.read_table(st.session_state['sample_file'], index_col='cram_file')
+                sample_df = pd.read_table(st.session_state['sample_file'])
                 dynamic_filters = DynamicFilters(sample_df, filters=sample_df.columns.tolist())
                 dynamic_filters.display_filters(location='columns', num_columns=2)
                 submit_filter_samples = st.form_submit_button('Submit filters')

@@ -42,7 +42,7 @@ def get_info(info_file, chr, start, end):
     except:
         pass
     df = df.T
-    if df.shape[0] != 0:
+    if df.shape[1] != 0:
         df.columns = ['seqid', 'source', 'type', 'start', 'end', 'score', 'strand', 'phase', 'attributes']
         df['name'] = df['attributes'].apply(find_region_name)
         df['type_name'] = df['type'] + '_' + df['name']
@@ -54,6 +54,7 @@ def get_info(info_file, chr, start, end):
 def genomic_info_plot2(info_df, mark_ls=[], legend_type='color'):
     # Recuperation of the genomic info
     # dict_color = {type: color for color, type in zip(px.colors.qualitative.Set1, info_df['type'].unique())}
+    st.write(info_df.head())
     dict_height = {name_type: n + 10 for n, name_type in enumerate(info_df['type'].unique())}
     info_df['height'] = info_df['type'].map(dict_height)
 
@@ -227,9 +228,10 @@ def main():
         from plotly.subplots import make_subplots
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02)
         st.session_state['info_df'] = get_info(st.session_state['info_file'] , st.session_state['chr'], st.session_state['start'], st.session_state['end'])
-        st.session_state['fig1'] = genomic_info_plot2(st.session_state['info_df'], legend_type='color', mark_ls=[st.session_state['marker']])
-        for i in st.session_state['fig1'].data :
-            fig.add_trace(i, row=1, col=1)
+        if st.session_state['info_df'].shape[0] != 0:
+            st.session_state['fig1'] = genomic_info_plot2(st.session_state['info_df'], legend_type='color', mark_ls=[st.session_state['marker']])
+            for i in st.session_state['fig1'].data :
+                fig.add_trace(i, row=1, col=1)
         
         if ('vep_file' in st.session_state) and st.session_state['load_vep'] == True:
             title= f"{st.session_state['chr']}:{st.session_state['info_df']['start'].min()}-{st.session_state['info_df']['end'].max()}"
