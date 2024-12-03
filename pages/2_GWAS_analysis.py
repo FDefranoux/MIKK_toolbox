@@ -430,7 +430,7 @@ def main():
 
         if not st.session_state['vcf_df'].empty:
             st.session_state['boxplot_submit'] = False
-            plot_tabs = st.tabs(['Boxpot Genotype x Phenotype', 'Linkage desiquilibrium'])
+            plot_tabs = st.tabs(['Boxpot Genotype x Phenotype', 'Linkage desiquilibrium', 'Get the datas'])
             with plot_tabs[0]:
                 cont_box = st.container(border=True)
                 cont_box.header('Boxplot parameters: ')
@@ -463,17 +463,27 @@ def main():
                 vcf_df = st.session_state['vcf_df'][st.session_state['vcf_df']['genotype'] != '(None, None)'].copy()
                 vcf_df = vcf_df[vcf_df['variable'] == st.session_state['gwas_phenotype']]
                 vcf_df['gen_dum'] = vcf_df['genotype'].str[1].astype(int) + vcf_df['genotype'].str[4].astype(int)
-                st.write(vcf_df)
                 new_df = vcf_df.groupby(['pos', 'id'])['gen_dum'].first().unstack()
-                st.write(new_df.T)
                 corr = locus_correlation(new_df)
-                st.write(corr)
+                # st.write(corr)
                 labels = [str(c) for c in corr.columns]
                 corr.columns = labels
                 corr.index = [str(c) for c in corr.index]
                 corr_fig = px.imshow(corr, zmin=0, zmax=1, x=corr.columns, y=corr.columns)
                 st.session_state['LD_fig']  = corr_fig
                 st.plotly_chart(corr_fig, use_container_width=True)
+            
+            with plot_tabs[2]:
+                vcf_df = st.session_state['vcf_df'][st.session_state['vcf_df']['genotype'] != '(None, None)'].copy()
+                vcf_df = vcf_df[vcf_df['variable'] == st.session_state['gwas_phenotype']]
+                vcf_df['gen_dum'] = vcf_df['genotype'].str[1].astype(int) + vcf_df['genotype'].str[4].astype(int)
+                new_df = vcf_df.groupby(['pos', 'id'])['gen_dum'].first().unstack()
+                st.write('### GWAS data:')
+                st.dataframe(vcf_df.filter(regex='pos|ref|alt|(^l)|(variable)').drop_duplicates(), hide_index=True, use_container_width=True)
+                st.write('### Genotype data:')
+                st.dataframe(new_df.T, use_container_width=True)
+
+
             
             save_page()
 

@@ -39,9 +39,10 @@ def get_info(info_file, chr, start, end):
         for n, rec in enumerate(tbx.fetch(str(chr), start, end)):
             info_pos = rec.split('\t')
             df[n] = info_pos
-    except:
-        pass
+    except Exception as err:
+        st.error(err)
     df = df.T
+    st.write(df.head())
     if df.shape[1] != 0:
         df.columns = ['seqid', 'source', 'type', 'start', 'end', 'score', 'strand', 'phase', 'attributes']
         df['name'] = df['attributes'].apply(find_region_name)
@@ -234,14 +235,14 @@ def main():
                 fig.add_trace(i, row=1, col=1)
         
         if ('vep_file' in st.session_state) and st.session_state['load_vep'] == True:
-            title= f"{st.session_state['chr']}:{st.session_state['info_df']['start'].min()}-{st.session_state['info_df']['end'].max()}"
-            st.header(f"Genomic plot for region {title}")
+            #title= f"{st.session_state['chr']}:{st.session_state['info_df']['start'].min()}-{st.session_state['info_df']['end'].max()}"
+            #st.header(f"Genomic plot for region {title}")
             st.session_state['vep_df'], st.session_state['fig2'] = load_vep(st.session_state['vep_file'], st.session_state['chr'], st.session_state['info_df']['start'].min(),st.session_state['info_df']['end'].max())
             for i in st.session_state['fig2'].data :    
                 fig.add_trace(i, row=2, col=1)
 
         st.plotly_chart(fig, use_container_width=True)
-        save_page(fig, name_file=title)
+        #save_page(fig, name_file=title)
         
         with st.expander('More information: '):
             st.write(st.session_state['info_df'], use_container_width=True)
