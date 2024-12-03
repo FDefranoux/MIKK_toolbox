@@ -1,7 +1,10 @@
 # Readme
 
 >
-> Description: ...
+> Description: This scripts are made to have a little GUI to explore data adapted for our MIKK panel but should work for similar dataset in other organisms.
+> 1. FASTA retriever: Convert VCF files in alignement to a reference. You will need the fasta files per chr of your reference.
+> 2. GWAS analysis: mostly adapted to analyse dataset after runing the flexlmm pipeline
+> 3. Region information: Small visualisation for VEP files
 >
 
 ## Installation
