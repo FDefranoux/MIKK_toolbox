@@ -68,6 +68,7 @@ pip install -r requirement.txt
 
 
 #### TODOs
+- [ ] Extract parameters directly from flexlmm param file
 - [ ] Think how to link the different pages and their output together (selection of SNP → VEP analysis or send to FASTA etc)
 
 
