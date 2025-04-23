@@ -72,7 +72,7 @@ def get_vcf(vcf_file, chr, start, end):
     vcf_df = pd.DataFrame()
     try:
         from pysam import VariantFile
-        reader = VariantFile(vcf_file)
+        reader = VariantFile(vcf_file, mode='br')
         # st.write(reader.header)
         for rec in reader.fetch(str(chr),max(0, int(start)-1), int(end)):
             info_pos = {'POS':rec.pos, 'REF':rec.ref, 'ALT':'/'.join(rec.alts)}
@@ -80,7 +80,7 @@ def get_vcf(vcf_file, chr, start, end):
             vcf_df= pd.concat([vcf_df, pd.DataFrame(info_pos, index=[rec.pos])])
     except ModuleNotFoundError:
         import vcf
-        reader = vcf.Reader(filename=vcf_file)
+        reader = vcf.Reader(vcf_file)
         for rec in reader.fetch(str(chr),  max(0, int(start)-1), int(end)):
             info_pos = {'POS':rec.POS, 'REF':rec.REF, 'ALT':'/'.join(rec.ALT)}
             info_pos.update({rec.samples[sample].sample:str(rec.samples[sample]['GT'])[1:-1] for sample, _ in enumerate(rec.samples)})
@@ -253,7 +253,10 @@ def ref_sequence_at_pos(fasta_dir, chr, start_pos, end_pos):
     """
 
     # Select the chromosome specific fasta file
-    fasta_file = os.path.join(fasta_dir, f'{str(chr)}.fa')
+    if not '.fa' in fasta_dir:
+        fasta_file = os.path.join(fasta_dir, f'{str(chr)}.fa')
+    else:
+        fasta_file = fasta_dir
     # Open the fasta file
     with open(fasta_file, 'r', encoding="utf-8") as fasta_content:
         # Verification that the first line correspond to the chr demanded
@@ -454,8 +457,11 @@ def streamlit_params():
                 if (var not in st.session_state) or (st.session_state[var] == ''):
                     uploaded_file = st.file_uploader(var.replace('_', ' ').replace('dir', 'file').title(), type=dict_fasta_params[var])
                     if uploaded_file != None:
-                        st.write(uploaded_file)
-                        params[var] = uploaded_file.name
+                        try:
+                            st.write(pd.read_csv(uploaded_file))
+                        except:
+                            pass
+                        params[var] = uploaded_file
             submit_params = st.form_submit_button('Submit', use_container_width=True)
             if submit_params:
                 st.session_state.update(params)
