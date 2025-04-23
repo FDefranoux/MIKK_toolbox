@@ -451,7 +451,7 @@ def streamlit_params():
             params = {}
             for var in dict_fasta_params.keys():
                 if (var not in st.session_state) or (st.session_state[var] == ''):
-                    params[var] = st.file_uploader(var.replace('_', ' ').replace('dir', 'file').title(), value='', type=dict_fasta_params[var])
+                    params[var] = st.file_uploader(var.replace('_', ' ').replace('dir', 'file').title(), type=dict_fasta_params[var])
             submit_params = st.form_submit_button('Submit', use_container_width=True)
             if submit_params:
                 st.session_state.update(params)
