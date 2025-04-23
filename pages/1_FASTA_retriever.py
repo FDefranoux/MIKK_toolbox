@@ -6,6 +6,7 @@ from streamlit_dynamic_filters import DynamicFilters
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.Align import MultipleSeqAlignment
+from io import StringIO
 
 from pages.utils.alignment_utils import render_alignment, view_alignment, save_bokeh_figure
 st.set_page_config(
@@ -451,7 +452,8 @@ def streamlit_params():
             params = {}
             for var in dict_fasta_params.keys():
                 if (var not in st.session_state) or (st.session_state[var] == ''):
-                    params[var] = st.file_uploader(var.replace('_', ' ').replace('dir', 'file').title(), type=dict_fasta_params[var])
+                    uploaded_file = st.file_uploader(var.replace('_', ' ').replace('dir', 'file').title(), type=dict_fasta_params[var])
+                    params[var] = StringIO(uploaded_file.getvalue().decode("utf-8"))
             submit_params = st.form_submit_button('Submit', use_container_width=True)
             if submit_params:
                 st.session_state.update(params)
