@@ -458,6 +458,7 @@ def streamlit_params():
                     uploaded_file = st.file_uploader(var.replace('_', ' ').replace('dir', 'file').title(), type=dict_fasta_params[var])
                     if uploaded_file != None:
                         try:
+                            st.write(var)
                             st.write(pd.read_csv(uploaded_file))
                         except:
                             pass
@@ -468,7 +469,7 @@ def streamlit_params():
     if not 'sample_dict' in st.session_state:
         st.session_state['sample_dict'] = {}
     if 'sample_file' in st.session_state:
-        if st.session_state['sample_file'] != '':
+        if st.session_state['sample_file']:
             with st.sidebar.expander('Filter parameters').form('Filter Form', border=False):
                 sample_df = pd.read_table(st.session_state['sample_file'])
                 dynamic_filters = DynamicFilters(sample_df, filters=sample_df.columns.tolist())
