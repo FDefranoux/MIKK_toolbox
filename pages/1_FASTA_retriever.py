@@ -455,7 +455,7 @@ def streamlit_params():
                     uploaded_file = st.file_uploader(var.replace('_', ' ').replace('dir', 'file').title(), type=dict_fasta_params[var])
                     if uploaded_file != None:
                         st.write(uploaded_file)
-                        params[var] = StringIO(uploaded_file.getvalue().decode("utf-8"))
+                        params[var] = uploaded_file.name
             submit_params = st.form_submit_button('Submit', use_container_width=True)
             if submit_params:
                 st.session_state.update(params)
