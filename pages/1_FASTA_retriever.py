@@ -439,17 +439,19 @@ def streamlit_params():
     """
     Description: Permits to initialize the parameters and session_state to run the streamlit app.
     """
+    dict_fasta_params = {'vcf_file': ['.vcf.gz', 'vcf'], 'fasta_dir':'.fa', 'sample_file':['txt', 'csv']}
+    
     if 'submit_fasta' not in st.session_state:
         st.info('Submit the data you want to analyse on the left-side sidebar.')
         st.session_state['submit_fasta'] = False
 
-    if len(set(['output_dir', 'vcf_file', 'fasta_dir', 'sample_file']) - set(st.session_state.keys())) > 0: 
-        with st.expander('Files parameters').form('General params', border=False):
+    if len(set(dict_fasta_params.keys()) - set(st.session_state.keys())) > 0: 
+        with st.sidebar.expander('Files parameters').form('General params', border=False):
             st.header('Enter paths manually')
             params = {}
-            for var in ['output_dir', 'vcf_file', 'fasta_dir', 'sample_file']:
+            for var in dict_fasta_params.keys():
                 if (var not in st.session_state) or (st.session_state[var] == ''):
-                    params[var] = st.text_input(var.replace('_', ' ').replace('dir', 'directory').title(), value='')
+                    params[var] = st.file_uploader(var.replace('_', ' ').replace('dir', 'file').title(), value='', type=dict_fasta_params[var])
             submit_params = st.form_submit_button('Submit', use_container_width=True)
             if submit_params:
                 st.session_state.update(params)
